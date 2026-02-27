@@ -10,33 +10,31 @@ pipeline {
 
         stage('Trivy IaC Scan') {
             steps {
-                sh '''
+                bat '''
                 trivy config --format json --output trivy-report.json .
-                python3 check_trivy_fail.py trivy-report.json
+                python check_trivy_fail.py trivy-report.json
                 '''
             }
         }
 
         stage('AI Security Remediation') {
             steps {
-                sh '''
-                python3 ai_remediation.py trivy-report.json
-                '''
+                bat 'python ai_remediation.py trivy-report.json'
             }
         }
 
         stage('Re-run Trivy Scan After AI Fix') {
             steps {
-                sh '''
+                bat '''
                 trivy config --format json --output trivy-report.json .
-                python3 check_trivy_fail.py trivy-report.json
+                python check_trivy_fail.py trivy-report.json
                 '''
             }
         }
 
         stage('Terraform Plan') {
             steps {
-                sh 'cd terraform && terraform init && terraform plan'
+                bat 'cd terraform && terraform init && terraform plan'
             }
         }
     }
