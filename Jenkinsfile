@@ -1,11 +1,28 @@
 pipeline {
-    agent any
+    agent {
+        docker { 
+            image 'python:3.11-slim' // Official Python image
+            args '-v /var/run/docker.sock:/var/run/docker.sock' // if you need Docker inside container
+        }
+    }
 
     stages {
         stage('Checkout Code') {
             steps {
                 echo 'Checking out GitHub repository...'
                 git branch: 'main', url: 'https://github.com/Gaurvi123456/DEVSECOPS-FLASK-APP.git'
+            }
+        }
+
+        stage('Install Trivy') {
+            steps {
+                echo 'Installing Trivy scanner...'
+                sh '''
+                apt-get update -y
+                apt-get install -y wget
+                wget https://github.com/aquasecurity/trivy/releases/download/v0.55.2/trivy_0.55.2_Linux-64bit.deb
+                dpkg -i trivy_0.55.2_Linux-64bit.deb
+                '''
             }
         }
 
@@ -36,10 +53,7 @@ pipeline {
             steps {
                 echo 'Re-running Trivy scan to confirm fixes...'
                 sh '''
-                # Run Trivy again after AI fixes
                 trivy config --format json --output trivy-report.json .
-                
-                # Fail pipeline if any HIGH/CRITICAL issues remain
                 python check_trivy_fail.py trivy-report.json
                 '''
             }
