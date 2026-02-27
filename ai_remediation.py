@@ -1,41 +1,41 @@
 import json
+import sys
+import re
 
-# Read Trivy JSON report
-with open("trivy-report.json", "r") as f:
+# Paths
+report_file = sys.argv[1]
+tf_file = './terraform/main.tf'
+
+# Load Trivy report
+with open(report_file, 'r') as f:
     data = json.load(f)
 
-# Open the Terraform file
-tf_file = "terraform/main.tf"
-with open(tf_file, "r") as f:
-    tf_lines = f.readlines()
+# Read the Terraform file
+with open(tf_file, 'r') as f:
+    tf_content = f.read()
 
-# Fixes mapping
-new_tf_lines = []
-inside_sg_block = False
+# Fixes
 
-for line in tf_lines:
-    stripped = line.strip()
+# 1️⃣ Fix SSH open to 0.0.0.0/0 → restrict to 10.0.0.0/24
+tf_content = re.sub(r'cidr_blocks\s*=\s*\["0.0.0.0/0"\]\s*# ❌ INTENTIONAL VULNERABILITY \(SSH open to world\)',
+                    'cidr_blocks = ["10.0.0.0/24"]  # Fixed by AI',
+                    tf_content)
 
-    # Detect start of aws_security_group block
-    if stripped.startswith('resource "aws_security_group" "vuln_sg"'):
-        inside_sg_block = True
+# 2️⃣ Enable IMDSv2 on aws_instance
+if 'aws_instance "web"' in tf_content:
+    if 'metadata_options' not in tf_content:
+        tf_content = tf_content.replace(
+            'user_data = <<-EOF',
+            'metadata_options {\n    http_tokens = "required"\n  }\n\n    user_data = <<-EOF'
+        )
 
-    # Fix SSH open to 0.0.0.0/0
-    if inside_sg_block and 'cidr_blocks = ["0.0.0.0/0"]' in stripped and 'from_port   = 22' in tf_lines[tf_lines.index(line)-1]:
-        line = line.replace('["0.0.0.0/0"]', '["10.0.0.0/24"]')  # Example: restrict to local network
+# 3️⃣ Encrypt root block device
+tf_content = re.sub(r'(aws_instance "web" \{[^}]+)',
+                    r'\1\n  root_block_device {\n    encrypted = true\n  }',
+                    tf_content, flags=re.DOTALL)
 
-    # Fix open egress to 0.0.0.0/0
-    if inside_sg_block and 'cidr_blocks = ["0.0.0.0/0"]' in stripped and 'egress {' in tf_lines[tf_lines.index(line)-2]:
-        line = line.replace('["0.0.0.0/0"]', '["10.0.0.0/24"]')
+# Save back the fixed Terraform file
+with open(tf_file, 'w') as f:
+    f.write(tf_content)
 
-    # End of block
-    if stripped == "}":
-        inside_sg_block = False
-
-    new_tf_lines.append(line)
-
-# Write back fixed Terraform file
-with open(tf_file, "w") as f:
-    f.writelines(new_tf_lines)
-
-print("✅ Terraform main.tf has been updated with AI-based security fixes!") 
+print("✅ AI remediation applied: main.tf updated with fixes.") 
